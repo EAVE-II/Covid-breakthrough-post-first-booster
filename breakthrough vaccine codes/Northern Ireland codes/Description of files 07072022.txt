@@ -1,0 +1,6 @@
+File out request - 07/07/2022
+Proj: HBS_E064 - Data and Connectivity- COVID-19 Vaccines Pharmacovigilance (DaC-VaP)
+
+Request to release R script associated with the above project to make the scripts available in Git Hub.
+
+This relates to the scripts only and not the underlying data. 

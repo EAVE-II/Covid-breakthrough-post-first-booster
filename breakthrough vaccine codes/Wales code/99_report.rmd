@@ -1,0 +1,666 @@
+---
+title  : "Risk of COVID-19 related hospitalisation and death post primary vaccination schedule and booster dose in Wales"
+date   : "Date compiled: `r format(Sys.time(), '%a %d %B %Y')`"
+author : "[Stuart Bedston](mailto:stuart.bedston@swansea.ac.uk)"
+---
+
+```{r setup, include=FALSE}
+
+source("r_clear_and_load.r")
+
+options(
+    knitr.kable.NA = ''
+)
+
+knitr::opts_chunk$set(
+    fig.width  = 6,
+    fig.height = 5,
+    fig.align = "center",
+    echo = FALSE,
+    message = FALSE,
+    warning = FALSE
+)
+
+sep21 <- ymd("2021-09-01")
+
+too_small <- function(x) {ifelse(x < 1/10^9, -Inf, x)}
+too_big   <- function(x) {ifelse(x > 10^9, Inf, x)}
+
+tidy_coef <- . %>%
+    mutate(
+        coef = str_glue("{est} ({low}, {high})",
+            est  = format(round(estimate,  2), nsmall = 2),
+            low  = format(round(too_small(conf_low),  2), nsmall = 2),
+            high = format(round(too_big(conf_high), 2), nsmall = 2)
+        )
+    ) %>%
+    select(xvar, xlbl, coef)
+
+```
+
+## 0. Message to SAIL reviewers
+
+Please start with “99_report.html” before checking the CSVs, it gives context to the analysis, explains the data sources used, the suppression applied to each bit of output, and lists how the CSVs are relevant.
+
+In general, for Figures, all counts with values between 1 and 9 have been replaced with 10.
+Whilst for Tables they have been omitted, with all other counts rounded to nearest 10.
+For model parameter estimates, no suppression has been applied.
+
+## 1. Research aims
+
+Identify demogrpahic and health charcteristics assoiated with greater risk
+of COVID-19 related hospitalisation and death for those in the general
+populaton who have revcieved a second or booster COVID-19 vaccination
+
+## 2. Study and analysis design
+
+Prospective observational study on a national e-cohort of those alive and
+living in Wales from December 2020 onwards who have at least had their
+second dose under the COVID-19 primary vaccination schedule.
+
+### Data sources
+
+- **C19_COHORT20**:
+    - **WDSD**: Welsh Demographic Service Dataset
+    - **WLGP**: Welsh Longitudinal General Practice data
+- **C19_COHORT_MORTALITY**:
+    - **ADDE**: Annual District Death Extract
+    - **CDDS**: COVID-19 Consolidated Deaths Data Set
+    - **WDSD**: Welsh Demographic Service Dataset
+- **(RRDA_)CVVD**: COVID-19 vaccination records from the Welsh Immunisation System
+- **(RRDA_)HWRA**: Health Workers list in NHS Wales organisations
+- **PATD**: COVID-19 PCR test results
+- **PEDW**: Patient Episode Dataset for Wales
+- **WDSD**: Welsh Demographic Service Dataset
+- **WLGP**: Welsh Longitudinal General Practice data
+- **CENW**: ONS census for Wales
+
+### Table 2.1: Cohort selection
+
+- Counts rounded to nearest 10, percentages to 1 decimal place
+
+```{r}
+
+qread("results/t_cohort_selection.qs") %>%
+mutate_at(c("n", "n_diff"), round, digits = -1) %>%
+mutate(p_diff = round(p_diff, 1)) %>%
+kable(
+    format.args = list(big.mark = ",")
+) %>%
+kable_styling(
+    bootstrap_options = "striped",
+    full_width = FALSE
+)
+
+```
+
+## 3. Cohort from Dec 2020
+
+```{r}
+
+qload("results/cohort_freq_plots.qsm")
+qload("results/cuminc_uptake.qsm")
+
+```
+
+### Figure 3.1: Weekly variant proportion
+
+- No suppression needed as the plots are based on data from outside of SAIL
+
+```{r, fig.height = 3}
+
+qload("results/variant.qsm")
+
+p_variant_week_freq
+
+p_variant_week_prop
+
+```
+
+### Figure 3.2: Weekly infection counts, overlaid with background variant and changepoints in rate
+
+- Counts between 1 and 9 replaced with 10
+
+```{r}
+qread("results/p_bg.qs")
+```
+
+### Figure 3.3: Vaccination counts by week
+
+- Counts are thousands per week
+- Counts between 1 and 9 replaced with 10
+
+```{r}
+p_vacc_week
+```
+
+### Figure 3.4: Number of weeks between vaccinations
+
+- Counts between 1 and 9 replaced with 10
+
+```{r}
+p_vacc_diff
+```
+
+### Figure 3.5: Number of positive PCR tests and hospitalisation/deaths by week
+
+- Counts between 1 and 9 replaced with 10
+
+```{r}
+p_infect_hosp_death
+```
+
+### Figure 3.6: Method of hospital admission for COVID-19 admissions
+
+- Counts between 1 and 9 replaced with 10
+
+```{r}
+qread("results/p_hosp_admis.qs")
+```
+
+### Figure 3.7: COVID-19 status for emergency COVID-19 hospital admissions
+
+- Counts between 1 and 9 replaced with 10
+
+```{r}
+qread("results/p_hosp_emg_c19.qs")
+```
+
+### Figure 3.8: Weeks between vaccination and positive PCR
+
+- Counts between 1 and 9 replaced with 10
+
+```{r}
+p_infect2dose
+```
+
+### Figure 3.9: Cumulative incidence of vaccination status
+
+```{r, fig.height = 10}
+p_vacc_state
+```
+
+# 4. Analysis sample selection
+
+### Table 4.1: Analysis sample selection
+
+- Counts rounded to nearest 10
+- Diff columns calculated after rounding
+
+```{r}
+t_analysis_sample_selection <- qread("results/t_analysis_sample_selection.qs")
+
+t_dose2_sample_size <-
+    qread(s_drive("d_analysis_dose2.qs")) %>%
+    summarise(
+        total_n = n_distinct(alf_e),
+        outcome_n = sum(event_flg)
+    )
+
+t_doseb_sample_size <-
+    qread(s_drive("d_analysis_doseb.qs")) %>%
+    summarise(
+        total_n = n_distinct(alf_e),
+        outcome_n = sum(event_flg)
+    )
+
+# print
+t_analysis_sample_selection %>%
+mutate(across(
+    .cols = matches("_n"),
+    .fns = ~ if_else(
+        condition = 1 <= abs(.x) & abs(.x) <= 9,
+        true = .x / abs(.x) * 10,
+        false = round(.x, -1),
+        missing = NA_real_
+    )
+)) %>%
+mutate(
+    total_n_diff = total_n - lag(total_n),
+    outcome_n_diff = outcome_n - lag(outcome_n)
+) %>%
+kable(
+    format.args = list(big.mark = ",")
+) %>%
+kable_styling(
+    bootstrap_options = "striped",
+    full_width = FALSE
+)
+```
+
+# 5. Analysis of break through for dose 2 and booster from 13 Sept 2021
+
+### Table 5.1: Descriptive summaries for Dose 2 in total
+
+- N, person-years, event counts, and rates are omitted if N or event count is between 1 and 9
+- N and event counts rounded to nearest 10
+- Person-years and rate per 1,000 person years rounded to 1dp
+- The following CSV is the raw version of Tables 5.1a, 5.1b, 5.1c combined: `t_desc_dose2b_rate.csv`
+
+```{r}
+t_desc_dose2b_rate <-
+    qread("results/t_desc_dose2b_rate.qs") %>%
+    mutate(
+        xvar = fct_inorder(xvar),
+        xlbl = fct_inorder(xlbl)
+    )
+
+# add totals to table
+t_desc_dose2b_total <-
+    t_desc_dose2b_rate %>%
+    group_by(xvar, xlbl) %>%
+    summarise(
+        n = sum(n),
+        pyears = sum(pyears),
+        event = sum(event)
+    ) %>%
+    ungroup() %>%
+    mutate(.after = xlbl, vacc_dose2_name = "Total") %>%
+    mutate(rate = event / pyears * 1000)
+
+t_desc_dose2b_rate <-
+    bind_rows(
+        t_desc_dose2b_total,
+        t_desc_dose2b_rate,
+    )
+
+# suppression
+t_desc_dose2b_rate <-
+    t_desc_dose2b_rate %>%
+    mutate(
+        n      = ifelse(1 <= n & n <= 9, NA, n),
+        n      = round(n, -1),
+        event  = ifelse(1 <= event & event <= 9, NA, event),
+        event  = round(event, -1),
+        pyears = ifelse(is.na(n), NA, pyears),
+        pyears = round(pyears, 1),
+        rate   = ifelse(is.na(event) | is.na(pyears), NA, rate),
+        rate   = round(rate, 1)
+    )
+
+# print Total
+t_desc_dose2b_rate %>%
+filter(vacc_dose2_name == "Total") %>%
+filter(xvar != "health_board") %>%
+select(-vacc_dose2_name) %>%
+kable(
+    digits = c(0,0, 0,1,0,1),
+    format.args = list(big.mark = ",")
+) %>%
+kable_styling(
+    bootstrap_options = "striped",
+    full_width = FALSE
+)
+
+# write everything
+t_desc_dose2b_rate %>%
+write_csv("request-out/t_desc_dose2b_rate.csv")
+```
+
+### Table 5.2: Descriptive summaries for dose 2 AZ
+
+- Similar to Table 5.1a, just subsetted to be those who recieved AZ for
+  their second dose
+
+```{r}
+t_desc_dose2b_rate %>%
+filter(vacc_dose2_name == "AZ") %>%
+filter(xvar != "health_board") %>%
+select(-vacc_dose2_name) %>%
+kable(
+    digits = c(0,0, 0,1,0,1),
+    format.args = list(big.mark = ",")
+) %>%
+kable_styling(
+    bootstrap_options = "striped",
+    full_width = FALSE
+)
+```
+
+### Table 5.3: Descriptive summaries for dose 2 PB
+
+- Similar to Table 5.1a, just subsetted to be those who recieved PB for
+  their second dose
+
+```{r}
+t_desc_dose2b_rate %>%
+filter(vacc_dose2_name == "PB") %>%
+filter(xvar != "health_board") %>%
+select(-vacc_dose2_name) %>%
+kable(
+    digits = c(0,0, 0,1,0,1),
+    format.args = list(big.mark = ",")
+) %>%
+kable_styling(
+    bootstrap_options = "striped",
+    full_width = FALSE
+)
+```
+
+### Table 5.4: Poisson rate ratios
+
+- Values are fully-adjusted estimated Poisson rate ratios, no suppression needed
+- Wald 95% confidence intervals
+- Reference levels are:
+    + `bmi_cat = 18.5-24.9`
+    + `vacc_dose_interval = dose2_day014`
+    + `dose2_prior_infection_cat = No prior infection`
+    + `wimd2019_quintile = 5least`
+- The following CSVs are the raw model output version of this table:
+    + `t_pois_coef_dose2.csv`
+    + `t_pois_coef_dose2_az.csv`
+    + `t_pois_coef_dose2_pb.csv`
+
+```{r}
+t_coef_dose2 <-
+    qread("results/t_coef_dose2.qs") %>%
+    tidy_coef() %>%
+    rename(dose2 = coef)
+
+t_coef_dose2_az <-
+    qread("results/t_coef_dose2_az.qs") %>%
+    tidy_coef() %>%
+    rename(dose2_az = coef)
+
+t_coef_dose2_pb <-
+    qread("results/t_coef_dose2_pb.qs") %>%
+    tidy_coef() %>%
+    rename(dose2_pb = coef)
+
+# print coef
+t_coef_dose2 %>%
+left_join(t_coef_dose2_az, by = c("xvar", "xlbl")) %>%
+left_join(t_coef_dose2_pb, by = c("xvar", "xlbl")) %>%
+filter(xvar != "bg_interval") %>%
+filter(xvar != "health_board") %>%
+kable() %>%
+kable_styling(bootstrap_options = "striped", full_width = FALSE)
+
+# save raw coef
+tidy_raw_coef <- . %>%
+    mutate(estimate = log(estimate)) %>%
+    select(-conf_low, -conf_high)
+
+qread("results/t_coef_dose2.qs") %>%
+    tidy_raw_coef() %>%
+    write_csv("request-out/t_pois_coef_dose2.csv")
+
+qread("results/t_coef_dose2_az.qs") %>%
+    tidy_raw_coef() %>%
+    write_csv("request-out/t_pois_coef_dose2_az.csv")
+
+qread("results/t_coef_dose2_pb.qs") %>%
+    tidy_raw_coef() %>%
+    write_csv("request-out/t_pois_coef_dose2_pb.csv")
+
+```
+
+
+# 6. Analysis of booster break through from 20 Dec 2021 (Omicron)
+
+### Table 6.1: Descriptive summaries for Total Dose 2
+
+- N, person-years, event counts, and rates are omitted if N or event count is between 1 and 9
+- N and event counts rounded to nearest 10
+- Person-years and rate per 1,000 person years rounded to 1dp
+- The following CSV is the raw version of this table: `t_desc_doseb_omicron_rate.csv`
+
+```{r}
+t_desc_doseb_omicron_rate <-
+    qread("results/t_desc_doseb_omicron_rate.qs") %>%
+    mutate(
+        xvar = fct_inorder(xvar),
+        xlbl = fct_inorder(xlbl)
+    )
+
+# add totals to table
+t_desc_doseb_omicron_total <-
+    t_desc_doseb_omicron_rate %>%
+    group_by(xvar, xlbl) %>%
+    summarise(
+        n = sum(n),
+        pyears = sum(pyears),
+        event = sum(event)
+    ) %>%
+    ungroup() %>%
+    mutate(.after = xlbl, vacc_doseb_name = "Total") %>%
+    mutate(rate = event / pyears * 1000)
+
+t_desc_doseb_omicron_rate <-
+    bind_rows(
+        t_desc_doseb_omicron_total,
+        t_desc_doseb_omicron_rate,
+    )
+
+# suppression
+t_desc_doseb_omicron_rate <-
+    t_desc_doseb_omicron_rate %>%
+    mutate(
+        n      = ifelse(1 <= n & n <= 9, NA, n),
+        n      = round(n, -1),
+        event  = ifelse(1 <= event & event <= 9, NA, event),
+        event  = round(event, -1),
+        pyears = ifelse(is.na(n), NA, pyears),
+        pyears = round(pyears, 1),
+        rate   = ifelse(is.na(event) | is.na(pyears), NA, rate),
+        rate   = round(rate, 1)
+    )
+
+# print Total
+t_desc_doseb_omicron_rate %>%
+filter(vacc_doseb_name == "Total") %>%
+filter(xvar != "health_board") %>%
+select(-vacc_doseb_name) %>%
+kable(
+    digits = c(0,0, 0,1,0,1),
+    format.args = list(big.mark = ",")
+) %>%
+kable_styling(
+    bootstrap_options = "striped",
+    full_width = FALSE
+)
+
+# write everything
+t_desc_doseb_omicron_rate %>%
+write_csv("request-out/t_desc_doseb_omicron_rate.csv")
+```
+
+### Table 6.2: Descriptive summaries for MD booster bose
+
+- Similar to Table 6.1, just subsetted to be those who recieved MD for
+  their booster dose
+
+```{r}
+t_desc_doseb_omicron_rate %>%
+filter(vacc_doseb_name == "MD") %>%
+filter(xvar != "health_board") %>%
+select(-vacc_doseb_name) %>%
+kable(
+    digits = c(0,0, 0,1,0,1),
+    format.args = list(big.mark = ",")
+) %>%
+kable_styling(
+    bootstrap_options = "striped",
+    full_width = FALSE
+)
+```
+
+### Table 6.3: Descriptive summaries for PB booster dose
+
+- Similar to Table 6.1, just subsetted to be those who recieved PB for
+  their booster dose
+
+```{r}
+t_desc_doseb_omicron_rate %>%
+filter(vacc_doseb_name == "PB") %>%
+filter(xvar != "health_board") %>%
+select(-vacc_doseb_name) %>%
+kable(
+    digits = c(0,0, 0,1,0,1),
+    format.args = list(big.mark = ",")
+) %>%
+kable_styling(
+    bootstrap_options = "striped",
+    full_width = FALSE
+)
+```
+
+
+### Table 6.4: Poisson rate ratios
+
+- Values are fully-adjusted estimated Poisson rate ratios, no suppression needed
+- Wald 95% confidence intervals
+- Reference levels are:
+    + `bmi_cat = 18.5-24.9`
+    + `vacc_dose_interval = doseb_day014`
+    + `dose2_prior_infection_cat = No prior infection`
+    + `wimd2019_quintile = 5least`
+- The following CSVs are the raw model output version of this table:
+    + `t_pois_coef_doseb.csv`
+    + `t_pois_coef_doseb_md.csv`
+    + `t_pois_coef_doseb_pb.csv`
+
+```{r}
+t_coef_doseb <-
+    qread("results/t_coef_doseb.qs") %>%
+    tidy_coef() %>%
+    rename(doseb = coef)
+
+t_coef_doseb_md <-
+    qread("results/t_coef_doseb_md.qs") %>%
+    tidy_coef() %>%
+    rename(doseb_md = coef)
+
+t_coef_doseb_pb <-
+    qread("results/t_coef_doseb_pb.qs") %>%
+    tidy_coef() %>%
+    rename(doseb_pb = coef)
+
+# print coef table
+t_coef_doseb %>%
+left_join(t_coef_doseb_md, by = c("xvar", "xlbl")) %>%
+left_join(t_coef_doseb_pb, by = c("xvar", "xlbl")) %>%
+filter(xvar != "bg_interval") %>%
+filter(xvar != "health_board") %>%
+kable() %>%
+kable_styling(bootstrap_options = "striped", full_width = FALSE)
+
+# save raw coef
+tidy_raw_coef <- . %>%
+    mutate(estimate = log(estimate)) %>%
+    select(-conf_low, -conf_high)
+
+qread("results/t_coef_doseb.qs") %>%
+tidy_raw_coef() %>%
+write_csv("request-out/t_pois_coef_doseb.csv")
+
+qread("results/t_coef_doseb_md.qs") %>%
+tidy_raw_coef() %>%
+write_csv("request-out/t_pois_coef_doseb_md.csv")
+
+qread("results/t_coef_doseb_pb.qs") %>%
+tidy_raw_coef() %>%
+write_csv("request-out/t_pois_coef_doseb_pb.csv")
+```
+
+
+# 7. Analysis of booster break through for QCovid items from 20 Dec 2021 (Omicron)
+
+### Table 7.1: Descriptive summaries
+
+- N, person-years, event counts, and rates are omitted if N or event count is between 1 and 9
+- If either the no or yes response are omitted (xlbl: 0 or 1) for a QCovid item (xvar), then both are omitted
+- N and event counts rounded to nearest 10
+- Person-years and rate per 1,000 person years rounded to 1dp
+- The following CSV is the raw version of this table: `t_desc_doseb_qcovid_rate.csv`
+
+```{r}
+t_desc_doseb_qcovid_rate <-
+    qread("results/t_desc_doseb_qcovid_rate.qs") %>%
+    # suppress a row
+    mutate(
+        n      = ifelse(1 <= n & n <= 9, NA, n),
+        n      = round(n, -1),
+        event  = ifelse(1 <= event & event <= 9, NA, event),
+        event  = round(event, -1),
+        pyears = ifelse(is.na(n), NA, pyears),
+        pyears = round(pyears, 1),
+        rate   = ifelse(is.na(event) | is.na(pyears), NA, rate),
+        rate   = round(rate, 1)
+    ) %>%
+    # suppress an xvar if one row has been suppressed
+    group_by(xvar) %>%
+    mutate(
+        mis_n      = any(is.na(n)),
+        mis_pyears = any(is.na(pyears)),
+        mis_event  = any(is.na(event)),
+        mis_rate   = any(is.na(rate))
+    ) %>%
+    ungroup() %>%
+    mutate(
+        n      = ifelse(mis_n,      NA, n),
+        pyears = ifelse(mis_pyears, NA, pyears),
+        event  = ifelse(mis_event,  NA, event),
+        rate   = ifelse(mis_rate,   NA, rate)
+    ) %>%
+    select(-matches("mis_"))
+
+t_desc_doseb_qcovid_rate %>%
+kable(
+    digits = c(0,0, 0,1,0,1),
+    format.args = list(big.mark = ",")
+) %>%
+kable_styling(
+    bootstrap_options = "striped",
+    full_width = FALSE
+)
+
+t_desc_doseb_qcovid_rate %>%
+write_csv("request-out/t_desc_doseb_qcovid_rate.csv")
+```
+
+### Table 7.2: Poisson rate ratios
+
+- Numbers are demographic-adjusted estimated rate ratios, no suppression needed
+- Adjusted for:
+    + vacc_dose_interval
+    + sex
+    + age_5y_cat
+    + wimd2019_quintile
+    + urban_rural_class
+    + health_board
+    + test_pre_dose2_cat
+    + dose2_prior_infection_cat
+    + vacc_dose1_dose2_diff_cat
+    + bmi_cat
+    + health_board
+    + bg_interval
+- The csv `t_pois_coef_doseb_qcovid.csv` is the raw model output that relates
+  to this table
+
+
+```{r}
+# print coef table
+qread("results/t_doseb_qcovid_rr.qs") %>%
+rename(xvar = term) %>%
+mutate(xlbl = 1) %>%
+arrange(desc(estimate)) %>%
+tidy_coef() %>%
+select(-xlbl) %>%
+kable() %>%
+kable_styling(
+    bootstrap_options = "striped",
+    full_width = FALSE
+)
+
+# save raw coef
+qread("results/t_doseb_qcovid_rr.qs") %>%
+mutate(estimate = log(estimate)) %>%
+select(-conf_low, -conf_high) %>%
+write_csv("request-out/t_pois_coef_doseb_qcovid.csv")
+```
+
+
+```{r}
+beep()
+```
